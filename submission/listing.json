@@ -1,0 +1,27 @@
+{
+  "name": "FolderToLLM Context Packager",
+  "subtitle": "Build filtered project context snapshots",
+  "description": "A DeepSeek Harness plugin that builds bounded, reviewable text snapshots from accessible project folders. Supports include/exclude path and extension filters, file-size limits, best-effort .gitignore rules, common generated/binary exclusions, and directory-tree output. It is read-only and does not grant filesystem permissions; review generated context before sharing because automated exclusions cannot guarantee that all secrets are removed.",
+  "category": "developer-tools",
+  "developerName": "Mulqizamzam",
+  "version": "0.2.1-rc.2",
+  "packageName": "mulqi-folder-to-llm",
+  "capabilities": [
+    "Create bounded project context snapshots",
+    "Filter project files by folders and extensions",
+    "Respect supported .gitignore rules",
+    "Review included and skipped files before sharing"
+  ],
+  "starterPrompts": [
+    "Create a context snapshot of ./src, include only .ts and .md files, and keep it under 80000 characters.",
+    "Prepare project context for debugging and report excluded files and safety warnings.",
+    "Show the FolderToLLM defaults and explain the available filters."
+  ],
+  "sourceRepository": "https://github.com/EdgeTypE/FolderToLLM",
+  "targetRepository": "https://github.com/mulqizamzam/mulqi-FolderToLLM",
+  "status": "listing_ready_local_review_pending",
+  "unresolved": [
+    "Verify DSH live smoke test on 0.2.1-rc.2",
+    "Confirm repository GitHub Description metadata"
+  ]
+}
