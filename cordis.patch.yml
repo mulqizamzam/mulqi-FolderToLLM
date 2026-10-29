@@ -1,4 +1,13 @@
+# DeepSeek Harness bundle registration for mulqi-folder-to-llm.
 - insert:
     - id: mulqi-folder-to-llm
-      name: mulqi-folder-to-llm
-      config: {}
+      name: FolderToLLM Context Packager
+      config:
+        folderToLLM:
+          enabled: true
+          defaults:
+            maxFileSizeBytes: 1048576
+            maxTotalChars: 150000
+            useGitignore: true
+            excludeFolders: [node_modules, .git, dist, build, .venv, venv, __pycache__, .cache]
+            excludeExtensions: [.env, .log, .tmp, .cache, .pyc, .pyo, .class, .jar, .so, .o, .a, .lib, .obj, .pdb, .zip, .gz, .tar, .jpg, .jpeg, .png, .gif, .bmp, .pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .mp3, .mp4]
