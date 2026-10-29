@@ -1,77 +1,121 @@
 # mulqi-FolderToLLM
 
-**DeepSeek Harness (DSH) plugin untuk membuat snapshot konteks proyek yang terfilter, terbatas ukurannya, dan mudah ditinjau.**
+**Plugin DeepSeek Harness (DSH) untuk membuat snapshot konteks proyek yang terfilter, berbatas ukuran, dan siap ditinjau sebelum dipakai dalam workflow LLM.**
 
-Port DeepSeek-native dari [EdgeTypE/FolderToLLM](https://github.com/EdgeTypE/FolderToLLM). Plugin ini mengganti utilitas PowerShell interaktif dengan dua tool DSH untuk menyusun daftar file dan menggabungkan konten teks proyek menjadi satu snapshot yang siap diberikan ke LLM.
+- **Versi:** `0.2.1-rc.2`
+- **Target:** DSH `0.2.1-rc.2` atau lebih baru yang kompatibel
+- **Runtime:** Node.js, tanpa dependency runtime eksternal
+- **Inspirasi:** [EdgeTypE/FolderToLLM](https://github.com/EdgeTypE/FolderToLLM) — port ini adalah implementasi baru untuk kontrak plugin DSH dan tidak menyertakan kode PowerShell upstream.
 
-## Fitur
+## Apa fungsi plugin ini?
 
-- Membuat pohon direktori dan menggabungkan konten file teks.
-- Filter berdasarkan direktori/folder, ekstensi, dan ukuran file.
-- Menghormati pola `.gitignore` secara best-effort.
-- Mengecualikan folder build/dependency dan format biner yang umum.
-- Batas jumlah file, ukuran file, karakter output, dan batas pemindaian.
-- Menghasilkan daftar file yang disertakan/dikecualikan agar output bisa ditinjau.
-- Tidak mengubah atau menghapus file sumber.
-- Skill DSH dengan petunjuk penggunaan untuk pemula.
+FolderToLLM membantu Anda memberi DeepSeek konteks yang relevan dari sebuah proyek tanpa langsung menyalin seluruh repository. Plugin memindai direktori lokal, membuat pohon folder, lalu menyertakan isi file teks yang lolos filter.
 
-## Persyaratan
+Fitur utama:
 
-- DeepSeek Harness (DSH) **0.2.1-rc.2** atau versi kompatibel.
-- Node.js **22.18.0+** untuk pengembangan/pemeriksaan lokal.
+- Membuat directory tree dan menggabungkan isi file teks terpilih.
+- Menggunakan aturan `.gitignore` dengan dukungan best-effort.
+- Filter berdasarkan folder, path, ekstensi, ukuran file dan budget total karakter.
+- Mengabaikan direktori build/dependency umum, symlink, banyak tipe file biner, dan nama file sensitif yang dikenal.
+- Mengembalikan daftar file, statistik, jumlah file yang dilewati, serta peringatan agar hasil dapat ditinjau.
+- Menyertakan Skill DSH untuk membantu memilih scope, menggunakan tool, dan memeriksa risiko data sebelum membagikan output.
 
-## Instalasi di DSH
+> **Penting soal privasi:** pengecualian otomatis bukan jaminan bahwa rahasia tidak akan ikut terbaca. Token atau password bisa tertulis di file sumber biasa. Selalu tinjau snapshot sebelum menempelkan, mengunggah, atau mengirimkannya ke layanan eksternal.
 
-Buka terminal pada mesin yang menjalankan DSH. Ganti profil `web` jika Anda menggunakan profil lain.
+## Mulai cepat untuk pemula
+
+### 1. Pastikan prasyarat
+
+- DSH `0.2.1-rc.2` atau build yang kompatibel.
+- Node.js versi yang didukung instalasi DSH Anda. Gunakan versi yang direkomendasikan oleh environment DSH.
+- Nama profile DSH Anda. Contoh di bawah memakai `web`.
+- Proses DSH perlu memiliki izin filesystem dari OS untuk membaca direktori proyek yang dipilih. Plugin ini **tidak** menambahkan izin OS baru.
+
+### 2. Pasang dari GitHub
+
+Jalankan di terminal yang memiliki CLI `dsh`:
 
 ```bash
 dsh plugin --profile web add "github:mulqizamzam/mulqi-FolderToLLM#main"
+```
+
+Ganti `web` dengan nama profile yang Anda pakai. Untuk instalasi yang lebih reproducible, pin ke commit SHA atau release tag yang sudah Anda tinjau alih-alih selalu memakai `main`.
+
+Apabila `pnpm` meminta persetujuan untuk menjalankan build saat install, jangan menyetujui secara membabi buta. Tinjau source lebih dulu, lalu tambahkan **key persis seperti yang dicetak pnpm** ke `pnpm-workspace.yaml` milik profile dengan nilai `true`. Key untuk paket Git dapat memuat URL dan commit SHA yang di-resolve.
+
+### 3. Jalankan atau restart profile
+
+```bash
 dsh --profile web
 ```
 
-Setelah dipasang, mulai ulang sesi/profile DSH bila plugin belum muncul.
+Jika profile sudah berjalan, restart agar bundle dan metadata Skill yang baru dimuat.
 
-Periksa instalasi:
+### 4. Coba di sesi DSH
 
-```bash
-dsh plugin --profile web why mulqi-folder-to-llm
-dsh --profile web --dump-config
+Minta DSH:
+
+> Buat snapshot konteks dari folder `./src`, hanya masukkan file `.ts`, `.js`, dan `.md`, kecualikan fixture serta generated output, batasi total ke 80.000 karakter, lalu laporkan file yang dilewati dan peringatan sebelum memakai snapshot.
+
+Plugin mendaftarkan dua tool:
+
+| Tool | Fungsi |
+|---|---|
+| `folder_to_llm_pack` | Memindai direktori lokal dan mengembalikan tree, isi file terfilter, statistik, serta warnings. |
+| `folder_to_llm_defaults` | Menjelaskan default, opsi, batasan, dan pola pemakaian tanpa memindai file. |
+
+Jika tool tidak muncul, cek apakah package terpasang pada profile yang benar, lalu restart DSH. Jangan menganggap pemindaian telah berjalan jika tool tidak tersedia atau menghasilkan error.
+
+## Contoh pemakaian
+
+### Review kode terarah
+
+Contoh argumen untuk `folder_to_llm_pack`:
+
+```json
+{
+  "rootPath": ".",
+  "includeFolders": ["src", "tests"],
+  "includeExtensions": [".ts", ".js", ".md"],
+  "excludeFolders": ["fixtures", "generated"],
+  "maxFileSizeBytes": 1048576,
+  "maxTotalChars": 80000,
+  "useGitignore": true
+}
 ```
 
-## Cara memakai
+### Menyiapkan konteks dokumentasi
 
-Minta DSH dengan bahasa biasa, misalnya:
+> Buat snapshot dari folder `docs` dan `src`. Sertakan Markdown, TypeScript, JavaScript, dan file package/manifests. Batasi output maksimal 120.000 karakter dan jelaskan file yang dilewati.
 
-> Buat snapshot konteks proyek ini. Abaikan node_modules, .git, hasil build, file rahasia, dan file biner. Utamakan berkas source dan dokumentasi. Batasi output agar mudah direview.
+### Memahami opsi sebelum scan
 
-Tool yang tersedia:
+Panggil `folder_to_llm_defaults` untuk melihat default aman, keterbatasan parsing `.gitignore`, dan saran penggunaan tanpa membaca file proyek.
 
-- **`folder_to_llm_pack`** — membuat snapshot berdasarkan root dan filter yang diminta.
-- **`folder_to_llm_defaults`** — menampilkan opsi dan default yang aman.
+## Batasan keamanan dan privasi
 
-Parameter seperti root path dan batas output bergantung pada skema tool DSH. Jika tool meminta path, gunakan direktori proyek yang memang tersedia untuk lingkungan DSH Anda. Plugin tidak memberi DSH izin filesystem baru; akses yang tersedia tetap dikendalikan host.
-
-Lihat [panduan pemula](docs/BEGINNERS.md) untuk contoh dan troubleshooting.
-
-## Batasan dan privasi
-
-- Pengecualian sensitif adalah heuristik, bukan jaminan pendeteksian seluruh secret. Review daftar file dan output sebelum membagikannya.
-- Snapshot bisa berisi kode atau data internal. Jangan mengirim output ke layanan/model yang tidak diizinkan organisasi Anda.
-- Perilaku `.gitignore` ditangani secara best-effort, bukan implementasi lengkap semua semantik Git.
-- Pengujian paket tidak menggantikan smoke test pada runtime DSH produksi.
+- Pemrosesan bersifat read-only: plugin tidak menulis, menghapus, atau menjalankan berkas proyek.
+- Path yang dapat diakses tetap ditentukan oleh host DSH dan izin OS.
+- Symlink dilewati; path include/exclude yang mencoba keluar dari root ditolak.
+- Parsing `.gitignore` best-effort, bukan implementasi lengkap seluruh aturan Git.
+- Pendeteksian file sensitif dan biner bersifat heuristik. File rahasia yang diberi nama biasa atau memuat credential di dalam source dapat tetap terikut.
+- Snapshot bisa mengandung source proprietary, data internal, URL privat, atau rahasia. Tinjau snapshot dan peringatan sebelum membagikannya ke layanan/model eksternal.
 
 ## Pengembangan dan validasi
 
+Pada checkout repository:
+
 ```bash
+npm run build
 npm test
 npm run validate
-npm run build
+npm pack --dry-run
 ```
 
-## Kredit
+Gunakan Node.js sesuai rentang yang dinyatakan di `package.json`. Tes lokal tidak menggantikan smoke test di DSH sungguhan; validasi lengkap harus memastikan dua tool terdaftar dan hasil scan fixture sesuai harapan.
 
-Workflow asal: [EdgeTypE/FolderToLLM](https://github.com/EdgeTypE/FolderToLLM). Reconciled port DSH maintained by Mulqizamzam.
+## Kredit dan lisensi
 
-## Lisensi
+Workflow sumber: [EdgeTypE/FolderToLLM](https://github.com/EdgeTypE/FolderToLLM). Port ini adalah implementasi terpisah untuk DSH.
 
-MIT. Lihat [LICENSE](LICENSE) dan [NOTICE.md](NOTICE.md).
+Lisensi: MIT. Lihat [LICENSE](LICENSE) dan [NOTICE.md](NOTICE.md).
