@@ -1,0 +1,4 @@
+- insert:
+    - id: mulqi-folder-to-llm
+      name: mulqi-folder-to-llm
+      config: {}
