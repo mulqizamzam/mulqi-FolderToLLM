@@ -4,59 +4,49 @@
 
 - Source: https://github.com/EdgeTypE/FolderToLLM
 - Source ref inspected: `main`, commit `95303747f81e1cd372a176bb883e599b35a95bea`
-- Target: `mulqi-folder-to-llm`
-- Target version: `0.2.1-rc.2`
+- Target: `mulqizamzam/mulqi-FolderToLLM`
+- Package: `mulqi-folder-to-llm@0.2.1-rc.2`
 - Host target: DeepSeek Harness (DSH) `0.2.1-rc.2`
 
 ## Discovery summary
 
-The upstream repository is a PowerShell/Windows utility for recursively scanning a project directory and aggregating directory structure plus selected text file contents. Important workflows identified in its README and scripts:
-
-- tree output
-- file content aggregation
-- include/exclude folder filters
-- include/exclude extension filters
-- min/max byte size filters
-- `.gitignore`-derived exclusion hints
-- common generated/binary exclusions
-- persistent configuration and interactive menu
+The upstream repository is a PowerShell/Windows utility for recursively scanning a project directory and aggregating directory structure plus selected text file contents. The workflows reviewed included directory-tree output, file aggregation, folder and extension filters, min/max file size filters, best-effort `.gitignore` exclusions, common generated/binary exclusions, saved configuration, and an interactive menu.
 
 ## Candidate dispositions
 
 | Candidate | Disposition | Rationale |
 |---|---|---|
-| Tree and file-content aggregation | compile_skill + DSH tool | Core user outcome; reimplemented in Node.js for portability and host tool invocation |
-| Folder/extension/size filters | preserve behavior | Core filtering controls retained in the DSH packager |
-| `.gitignore` handling | compile | Implemented best-effort; not a complete Git pattern engine |
-| Binary/large file skipping | preserve and harden | Bounded output, binary heuristics, and file size defaults |
-| PowerShell menu / Windows BAT wrapper | discard | Platform-specific CLI UX does not map to DSH tools |
-| Saved PowerShell config | reference_only | DSH tool arguments and documented safe defaults replace machine-local menu config |
-| Example output file | discard | Avoid committing a potentially misleading or stale snapshot from a user project |
+| Tree and file-content aggregation | Compile into DSH tool | Core outcome retained as a local read-only snapshot tool |
+| Folder, path, extension, and size filters | Preserve | Required to limit relevant context |
+| `.gitignore` handling | Compile | Best-effort parser; not a full Git implementation |
+| Binary and large-file skipping | Preserve/harden | Bounded output, binary heuristics, and default exclusions |
+| PowerShell menu / Windows BAT wrapper | Discard | Windows-specific UX does not map to native DSH tools |
+| Saved PowerShell config | Reference only | DSH tool arguments and bundle defaults replace machine-local menu state |
+| Example output fixture from source repo | Discard | Avoid carrying stale or potentially sensitive snapshots |
 
 ## Architecture
 
-Hybrid: DSH plugin tool registrations + one reference Skill + beginner docs. No MCP server or remote service is required.
+Hybrid: DSH tool registrations plus one Skill and beginner documentation. No MCP server or remote service is required.
 
 ## Host/workspace contract
 
-- Read operations: core workflow.
-- Directory traversal: only paths accessible to the DSH host.
-- Mutations: none.
-- Shell and Python: not invoked by the plugin itself.
-- Plugin does not grant new filesystem capabilities.
+- Filesystem access is provided and constrained by the DSH host and OS permissions.
+- Tool reads a caller-specified root and emits a bounded text value.
+- Source files are not written, deleted, or executed.
+- No remote upload is performed by this plugin.
+- Symlinks and include/exclude paths that escape the root are rejected/skipped.
 
 ## Security and residual risk
 
-- `.gitignore` support is best-effort, not a full specification implementation.
-- Secret-name checks are heuristic and can miss credentials stored in ordinary filenames/content.
-- Source contents can include proprietary information; users should review before sharing.
-- Files are not written, executed, deleted, or uploaded by this plugin.
-- Runtime compatibility still needs a smoke test against an actual DSH `0.2.1-rc.2` installation.
+- `.gitignore` support is best-effort and may differ from Git's full ignore semantics.
+- Sensitive-name detection cannot catch credentials inside arbitrary filenames or normal source text.
+- Project snapshots may contain proprietary source or data and must be reviewed before sharing.
+- CI/unit tests and package validation do not prove runtime compatibility with every DSH build.
+- DSH live smoke test on version `0.2.1-rc.2` remains outstanding.
 
-## Status
+## Publication state
 
-- Discovery completed: yes
-- DSH package shape created: yes
-- Local tests/validation: recorded in `docs/VALIDATION.md`
-- Public repository publication: pending/partial until all intended files are committed and metadata is verified
-- DSH live smoke test: not executed in this environment
+- Public repository: created and reachable.
+- Package manifest, registry patch, DSH entrypoint, context packager, Skill, README, beginner guide, logo assets, tests, validation script, CI, license and privacy documentation: committed to `main`.
+- GitHub Actions CI: latest run was queued/in progress at last inspection; a final green result must be checked.
+- Repository Description metadata: still needs the professional Description field applied in GitHub repository settings because the available connector exposes file writes but not repository metadata updates.
