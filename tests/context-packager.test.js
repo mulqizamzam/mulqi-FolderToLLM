@@ -1,69 +1,81 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import fs from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
-import { packContext, getDefaults } from '../lib/context-packager.js'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createContextPack } from '../lib/context-packager.js'
 
-async function fixture() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'folder-to-llm-'))
-  await fs.mkdir(path.join(root, 'src'))
-  await fs.mkdir(path.join(root, 'node_modules'))
-  await fs.writeFile(path.join(root, 'src', 'hello.js'), 'export const hello = "world"\n')
-  await fs.writeFile(path.join(root, 'src', 'notes.md'), '# Notes\n')
-  await fs.writeFile(path.join(root, 'secrets.env'), 'TOKEN=not-for-output')
-  await fs.writeFile(path.join(root, 'node_modules', 'dependency.js'), 'should not appear')
-  await fs.writeFile(path.join(root, '.gitignore'), 'ignored.txt\n')
-  await fs.writeFile(path.join(root, 'ignored.txt'), 'ignored by rule')
-  return root
+async function fixture(fn) {
+  const root = await mkdtemp(join(tmpdir(), 'folder-to-llm-'))
+  try { await fn(root) } finally { await rm(root, { recursive: true, force: true }) }
 }
 
-test('defaults keep bounded and conservative filters', () => {
-  const defaults = getDefaults()
-  assert.ok(defaults.maxFiles > 0)
-  assert.ok(defaults.maxOutputChars > 0)
-  assert.ok(defaults.excludeFolders.includes('node_modules'))
-})
+test('collects useful text and emits tree, stats, and stable content', async () => fixture(async (root) => {
+  await mkdir(join(root, 'src'))
+  await writeFile(join(root, 'README.md'), '# Demo\nhello')
+  await writeFile(join(root, 'src', 'index.js'), 'export const x = 1\n')
+  const first = await createContextPack({ rootPath: root })
+  const second = await createContextPack({ rootPath: root })
+  assert.equal(first.ok, true)
+  assert.match(first.content, /DIRECTORY TREE/)
+  assert.match(first.content, /FILE: README.md/)
+  assert.equal(first.content, second.content)
+  assert.equal(first.summary.includedFiles, 2)
+}))
 
-test('packs text files and excludes common sensitive and generated paths', async () => {
-  const root = await fixture()
+test('skips sensitive names, binary files, ignored files, and large files', async () => fixture(async (root) => {
+  await writeFile(join(root, '.gitignore'), 'ignored.txt\n')
+  await writeFile(join(root, '.env'), 'API_KEY=secret')
+  await writeFile(join(root, 'ignored.txt'), 'ignore me')
+  await writeFile(join(root, 'app.js'), 'x'.repeat(100))
+  await writeFile(join(root, 'huge.txt'), 'x'.repeat(300))
+  await writeFile(join(root, 'blob.dat'), Buffer.from([0, 1, 2, 3]))
+  const result = await createContextPack({ rootPath: root, maxFileSizeBytes: 200 })
+  assert.ok(result.skipped.sensitive >= 1)
+  assert.ok(result.skipped.gitignored >= 1)
+  assert.ok(result.skipped.tooLarge >= 1)
+  assert.ok(!result.content.includes('API_KEY=secret'))
+  assert.ok(!result.content.includes('ignore me'))
+}))
+
+test('supports extension/folder filters and total output budget', async () => fixture(async (root) => {
+  await mkdir(join(root, 'src'))
+  await mkdir(join(root, 'docs'))
+  await writeFile(join(root, 'src', 'main.ts'), 't'.repeat(800))
+  await writeFile(join(root, 'src', 'note.md'), 'markdown')
+  await writeFile(join(root, 'docs', 'guide.md'), 'document')
+  const result = await createContextPack({ rootPath: root, includeFolders: ['src'], includeExtensions: ['.ts'], maxTotalChars: 200 })
+  assert.ok(result.summary.outputChars <= 200)
+  assert.ok(result.content.includes('main.ts'))
+  assert.ok(!result.content.includes('guide.md'))
+}))
+
+test('rejects include paths that escape the root', async () => fixture(async (root) => {
+  await assert.rejects(createContextPack({ rootPath: root, includeFolders: ['../outside'] }), /must stay inside rootPath/)
+}))
+
+test('skips symlinks rather than following them', async () => fixture(async (root) => {
+  const elsewhere = join(root, '..', 'not-in-root-secret.txt')
+  await writeFile(elsewhere, 'secret')
   try {
-    const result = await packContext({ root })
-    assert.equal(result.ok, true)
-    assert.match(result.snapshot, /hello = "world"/)
-    assert.doesNotMatch(result.snapshot, /not-for-output/)
-    assert.doesNotMatch(result.snapshot, /should not appear/)
-    assert.ok(result.skippedFiles.some(x => x.path === 'secrets.env'))
-    assert.ok(result.includedFiles.some(x => x.path === 'src/hello.js'))
-  } finally { await fs.rm(root, { recursive: true, force: true }) }
-})
+    await symlink(elsewhere, join(root, 'leak.txt'))
+    const result = await createContextPack({ rootPath: root })
+    assert.ok(!result.content.includes('secret'))
+  } finally { await rm(elsewhere, { force: true }) }
+}))
 
-test('supports an extension allowlist and output budget', async () => {
-  const root = await fixture()
-  try {
-    const result = await packContext({ root, includeExtensions: ['.md'], maxOutputChars: 150 })
-    assert.equal(result.ok, true)
-    assert.doesNotMatch(result.snapshot, /hello = "world"/)
-    assert.ok(result.outputChars <= 150)
-  } finally { await fs.rm(root, { recursive: true, force: true }) }
-})
+test('respects the exact total character budget including the directory tree', async () => fixture(async (root) => {
+  await mkdir(join(root, 'a', 'b'), { recursive: true })
+  await writeFile(join(root, 'a', 'b', 'deep.md'), 'x'.repeat(500))
+  const result = await createContextPack({ rootPath: root, maxTotalChars: 80, useGitignore: false })
+  assert.ok(result.summary.outputChars <= 80)
+  assert.equal(result.summary.outputChars, result.content.length)
+  assert.equal(result.summary.truncated, true)
+}))
 
-test('fails closed for missing root', async () => {
-  const result = await packContext({ root: '/this/path/should/not/exist/folder-to-llm' })
-  assert.equal(result.ok, false)
-})
-
-test('does not follow symbolic links', async () => {
-  const root = await fixture()
-  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'folder-to-llm-outside-'))
-  try {
-    await fs.writeFile(path.join(outside, 'outside.js'), 'outside content')
-    await fs.symlink(outside, path.join(root, 'linked-outside'), 'dir')
-    const result = await packContext({ root })
-    assert.equal(result.ok, true)
-    assert.doesNotMatch(result.snapshot, /outside content/)
-  } finally {
-    await fs.rm(root, { recursive: true, force: true })
-    await fs.rm(outside, { recursive: true, force: true })
-  }
+test('packaged lib entry point can execute without source files', async () => {
+  const module = await import('../lib/index.js')
+  assert.equal(module.name, 'mulqi-folder-to-llm')
+  assert.equal(typeof module.apply, 'function')
+  assert.equal(typeof module.createContextPack, 'function')
 })
